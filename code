@@ -1,0 +1,53 @@
+hive -e "drop table table_name"
+
+sqoop import --connect 'jdbc:sqlserver://DB_Address:1433;databasename=DB_name' --username testuser --password 1234 –table table_name --hive-table pa_soc.r2d2_cv --create-hive-table --hive-import --m 1 --driver com.microsoft.sqlserver.jdbc.SQLServerDriver
+
+hive -e "select p.FileName from  pa_soc.r2d2_cv p  left outer join pa_soc.people_content b on p.User_GGID=b.uid  where date_format(b.ts_refresh,'yyyyMMdd')>date_format(p.LastUpdate,'yyyyMMdd')"| sed 's/[\t]/,/g'  >  /exec/data/out/people.csv
+
+cat people.csv | grep ".pdf" > people1.csv
+
+cat people.csv | grep -v ".pdf" > people2.csv
+
+awk '$0="/exec/data/out/pdf/PEOPLE_DOC/"$0' /exec/data/out/people1.csv > /exec/data/out/people_content
+
+awk '$0="/exec/data/out/pdf/PEOPLE_DOC/"$0".pdf"' /exec/data/out/people2.csv >> /exec/data/out/people_content
+
+rm -r /exec/data/out/r2d2_cv
+
+mkdir /exec/data/out/r2d2_cv
+
+hadoop fs -get `cat /exec/data/out/people_content` /exec/data/out/r2d2_cv
+
+ 
+
+ 
+
+$spark-shell --packages com.databricks:spark-csv_2.11:1.2.0 -i file.scala
+
+$ spark-shell --packages com.databricks:spark-csv_2.11:1.2.0
+
+:cp /var/lib/spark/sqljdbc4-2.0.jar
+
+val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+
+val df_r2d2_table = sqlContext.read.format("jdbc").option("url", “jdbc:sqlserver://DB_Address:1433;databasename=DB_name;user= testuser;password=1234;").option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver").option("dbtable", "dbo.R2D2_CV").option("user", " testuser ").option("password", "1234").load()
+
+ 
+
+val hiveContext = new org.apache.spark.sql.hive.HiveContext(sc)
+
+val df_hive_table = hiveContext.sql("select * from pa_soc.people_content")
+
+val df_left_join = df_r2d2_table.join(df_hive_table, df_r2d2_table("User_GGID") === df_hive_table("uid"), "left_outer")
+
+val df_left_join_filter = df_left_join.where(date_format(col("LastUpdate"), "YYYYMMdd") < date_format(to_date(col("ts_refresh")), "YYYYMMdd"))
+
+val result = df_left_join_filter.select("FileName")
+
+sqlContext.setConf("spark.sql.tungsten.enabled", "false")
+
+result.coalesce(1).write.format("com.databricks.spark.csv").save("/home/adpaapp/csv5")
+
+result.write.save("/home/adpaapp/csv")                              --> saves as parquet file
+
+result.rdd.repartition(1).saveAsTextFile("/home/adpaapp/text1")                             --> saves as textfile
